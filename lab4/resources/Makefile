@@ -3,10 +3,10 @@
 CC = gcc
 CFLAGS = -Wall -g #replace -g with -O when not debugging
 
-DEPS	= Makefile
-OBJS	= lab4.o
+DEPS	= gettime.h Makefile
+OBJS	= gettime.o insertionsort.o
 
-EXECS	= lab4
+EXECS	= insertionsort
 
 all:	$(EXECS)
 
