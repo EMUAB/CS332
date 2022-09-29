@@ -10,6 +10,8 @@
 
 #define MIN_DEPTH 0
 
+struct stat stat_file;
+
 char *filetype(unsigned char type) {
     char *str;
     switch (type) {
@@ -68,16 +70,19 @@ int isANumber(char *input) {
 int recursiveDirs(char *parentDirName, int depth, int verbose) {
     DIR *parentDir;
     struct dirent *dirent;
-    struct stat *stat_file;
     char time_buf[100];
     char parentDup[300];
     char newDir[300];
+
+    // Set a duplicate of the dirname so it can be messed with
+    strcpy(parentDup, parentDirName);
 
     parentDir = opendir(parentDirName);
     if (parentDir == NULL) {
         printf("Error opening directory '%s'\n", parentDirName);
         exit(-1);
     }
+
     while ((dirent = readdir(parentDir)) != NULL) {
         if (!strcmp(dirent->d_name, ".") || !strcmp(dirent->d_name, ".."))
             continue;
@@ -87,23 +92,29 @@ int recursiveDirs(char *parentDirName, int depth, int verbose) {
         for (i = 0; i < depth; i++) {
             printf("\t");
         }
-        stat(strcat(strdup(parentDirName), dirent->d_name), stat_file);
-        strftime(time_buf, 100, "%x %I:%M%p",
-                 localtime(&(stat_file->st_atim.tv_sec)));
-        if (verbose) {
+        // Printing for -S flag
+        if (verbose &&
+            stat(strcat(parentDup, dirent->d_name), &stat_file) == 0) {
+            strftime(time_buf, 100, "%x %I:%M%p",
+                     localtime(&((&stat_file)->st_atim.tv_sec)));
             printf("%s \tSize: %ldb \tLast Accessed: %s\n", dirent->d_name,
                    (strcmp(filetype(dirent->d_type), "directory")
-                        ? (stat_file->st_size)
+                        ? (&stat_file)->st_size
                         : 0),
                    time_buf);
+
+            // Printing normally
         } else {
             printf("%s\n", dirent->d_name);
         }
+        // Resets parentDup
+        strcpy(parentDup, parentDirName);
 
         if (!strcmp(filetype(dirent->d_type), "directory") &&
             !(!strcmp(dirent->d_name, ".") || !strcmp(dirent->d_name, ".."))) {
-            strcpy(parentDup, parentDirName);
             strcpy(newDir, strcat(parentDup, strcat(dirent->d_name, "/")));
+            strcpy(parentDup, parentDirName);
+
             recursiveDirs(newDir, depth + 1, verbose);
         }
     }
@@ -115,16 +126,20 @@ int main(int argc, char *argv[]) {
     int verbose = 0;
     long size = 0;
     char str_find[100];
-    str_find[0] = '?';
+    str_find[0] = '\0';
+
     int opt;
+    char dir_name[200];
 
     // Sets the options
     if (argc != 1) {
         while ((opt = getopt(argc, argv, "Ss:f:")) != -1) {
             switch (opt) {
+                // -S flag
                 case 'S':
                     verbose = 1;
                     break;
+                // -s flag
                 case 's':
                     if (isANumber(optarg)) {
                         size = atol(optarg);
@@ -133,29 +148,31 @@ int main(int argc, char *argv[]) {
                         exit(-1);
                     }
                     break;
+                // -f flag
                 case 'f':
                     strcpy(str_find, optarg);
                     break;
+                // Unknown flag or missing argument
                 case '?':
                     exit(-1);
             }
         }
     }
 
-    // Set the file name
+    // Set the directory name
     if (argv[optind] != NULL || argv[optind] != 0x0) {
         int dir_name_len = strlen(argv[optind]);
-        char dir_name[dir_name_len + 1];
         strcpy(dir_name, argv[optind]);
         // Enforces that the directory ends in a '/'
         if (dir_name[dir_name_len - 1] != '/') {
             dir_name[dir_name_len] = '/';
             dir_name[dir_name_len + 1] = '\0';
         }
-        recursiveDirs(dir_name, MIN_DEPTH, verbose);
     } else {
-        recursiveDirs("./", MIN_DEPTH, verbose);
+        strcpy(dir_name, "./");
     }
+
+    recursiveDirs(dir_name, MIN_DEPTH, verbose);
 
     return 0;
 }
