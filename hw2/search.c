@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <dirent.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,52 +13,53 @@
 
 struct stat stat_file;
 
-char *filetype(unsigned char type) {
-    char *str;
+/**
+ * @brief Determines the filetype of a given file and reduces it down to a
+ * character. Based on the example from lab 5.
+ *
+ * @param type
+ * @return char
+ */
+char filetype(unsigned char type) {
+    char ch;
     switch (type) {
         case DT_BLK:
-            str = "block device";
+            ch = 'b';
             break;
         case DT_CHR:
-            str = "character device";
+            ch = 'c';
             break;
         case DT_DIR:
-            str = "directory";
+            ch = 'd';
             break;
         case DT_FIFO:
-            str = "named pipe (FIFO)";
+            ch = 'p';
             break;
         case DT_LNK:
-            str = "symbolic link";
+            ch = 'l';
             break;
         case DT_REG:
-            str = "regular file";
+            ch = 'f';
             break;
         case DT_SOCK:
-            str = "UNIX domain socket";
+            ch = 's';
             break;
         case DT_UNKNOWN:
-            str = "unknown file type";
+            ch = 'u';
             break;
         default:
-            str = "UNKNOWN";
+            ch = 'u';
     }
-    return str;
+    return ch;
 }
 
-/*TODO:
-    -S  shows size, permissions, and last access time (0 size for
-        directories)
-   -s   list all files in heirarchy w/ size <= given
-   -f   1) the file name contains the substring in the string pattern option
-        2) the depth of the
-        file relative to the starting directory of the traversal is less than
-        or equal to the depth option (the starting directory itself has a depth
-        of 0)
-
-*/
-
-int isANumber(char *input) {
+/**
+ * @brief Checks if a given string strictly contains numerical digits
+ *
+ * @param input string
+ * @return 0 - passes, 1 - fails
+ */
+int isNumber(char *input) {
     int i, len = strlen(input);
     for (i = 0; i < len; i++) {
         if (!isdigit(input[i])) {
@@ -67,73 +69,150 @@ int isANumber(char *input) {
     return 1;
 }
 
-int recursiveDirs(char *parentDirName, int depth, int verbose) {
-    DIR *parentDir;
+void printPerms(mode_t perms) {
+    printf("%c", (perms & S_IRUSR) ? 'r' : '-');
+    printf("%c", (perms & S_IWUSR) ? 'w' : '-');
+    printf("%c", (perms & S_IXUSR) ? 'x' : '-');
+    printf("%c", (perms & S_IRGRP) ? 'r' : '-');
+    printf("%c", (perms & S_IWGRP) ? 'w' : '-');
+    printf("%c", (perms & S_IXGRP) ? 'x' : '-');
+    printf("%c", (perms & S_IROTH) ? 'r' : '-');
+    printf("%c", (perms & S_IWOTH) ? 'w' : '-');
+    printf("%c", (perms & S_IXOTH) ? 'x' : '-');
+}
+
+/*TODO:
+    -f  1) the file name contains the substring in the string pattern option
+        2) the depth of the
+        file relative to the starting directory of the traversal is less than
+        or equal to the depth option (the starting directory itself has a depth
+        of 0)
+    -t  "f" only shows normal files, "d" only shows directories (for 'f' only
+   list the names of normal files, still tab them over by depth but don't list
+   the directory name beforehand)
+
+*/
+
+/**
+ * @brief
+ *
+ * @param dir_name      Directory string name
+ * @param depth         Current search depth
+ * @param verbose       Is/not verbose
+ * @param max_size      Specified max size
+ * @param max_depth     Specified max depth
+ * @param find_substring    Specified substring
+ * @param t_flag        'f' or 'd' if -t is used
+ */
+int printDir(char *dir_name, int depth, int verbose, off_t max_size,
+             int max_depth, char *f_substr, char t_flag) {
+    DIR *current_dir;
     struct dirent *dirent;
     char time_buf[100];
-    char parentDup[300];
+    char dir_name_dup[300];
     char newDir[300];
+    char *buf;
 
     // Set a duplicate of the dirname so it can be messed with
-    strcpy(parentDup, parentDirName);
+    strcpy(dir_name_dup, dir_name);
 
-    parentDir = opendir(parentDirName);
-    if (parentDir == NULL) {
-        printf("Error opening directory '%s'\n", parentDirName);
+    // Open the directory
+    current_dir = opendir(dir_name);
+    if (current_dir == NULL) {
+        printf("Error opening directory '%s'\n", dir_name);
         exit(-1);
     }
 
-    while ((dirent = readdir(parentDir)) != NULL) {
+    // Main loop that prints each file
+    while ((dirent = readdir(current_dir)) != NULL) {
+        // Skips the . and .. directory files
         if (!strcmp(dirent->d_name, ".") || !strcmp(dirent->d_name, ".."))
             continue;
 
+        // Sets the stat_file
+        int b_stat_success =
+            lstat(strcat(dir_name_dup, dirent->d_name), &stat_file);
+
+        // Resets dir_name_dup
+        strcpy(dir_name_dup, dir_name);
+
+        // Sets the size of directories to 0
+        if (filetype(dirent->d_type) == 'd') {
+            (&stat_file)->st_size = 0;
+        }
+        int matches =
+            f_substr[0] != '\0' && strstr(dirent->d_name, f_substr) == NULL;
+
+        // Skips if the file's size is over max_size 
+        // OR if the substring doesn't match
+        if (((&stat_file)->st_size > max_size)) {
+            continue;
+        }
         // Tabs over the entry per search level
         int i;
-        for (i = 0; i < depth; i++) {
-            printf("\t");
+        if ((t_flag != 'd' || filetype(dirent->d_type) == 'd') && !matches) {
+            for (i = 0; i < depth; i++) {
+                printf("\t");
+            }
         }
-        // Printing for -S flag
-        if (verbose &&
-            stat(strcat(parentDup, dirent->d_name), &stat_file) == 0) {
-            strftime(time_buf, 100, "%x %I:%M%p",
-                     localtime(&((&stat_file)->st_atim.tv_sec)));
-            printf("%s \tSize: %ldb \tLast Accessed: %s\n", dirent->d_name,
-                   (strcmp(filetype(dirent->d_type), "directory")
-                        ? (&stat_file)->st_size
-                        : 0),
-                   time_buf);
+        // Prints when there is no t flag, t flag is f and file is regular, t flag is f and file is directory
+        // Does NOT print when the f flag exists and there is not a match
+        if ((t_flag == 0 || (t_flag == 'f' && filetype(dirent->d_type) == 'f') ||
+            (t_flag == 'd' && filetype(dirent->d_type) == 'd'))
+            && (!matches || f_substr[0]=='\0')) {
+            printf("%s ", dirent->d_name);
 
-            // Printing normally
-        } else {
-            printf("%s\n", dirent->d_name);
+            if (filetype(dirent->d_type) == 'l') {
+                ssize_t nbytes, bufsize;
+                strcpy(newDir, strcat(dir_name_dup, dirent->d_name));
+                strcpy(dir_name_dup, dir_name);
+                // The following is based off of the example here:
+                // https://man7.org/linux/man-pages/man2/readlink.2.html
+                bufsize =
+                    stat_file.st_size == 0 ? PATH_MAX : stat_file.st_size + 1;
+                buf = malloc(bufsize);
+                nbytes = readlink(newDir, buf, bufsize);
+                printf("(%.*s)", (int)nbytes, buf);
+                free(buf);
+            }
+            // Printing for -S flag
+            if (verbose && b_stat_success == 0) {
+                strftime(time_buf, 100, "%x %I:%M%p",
+                         localtime(&((&stat_file)->st_atim.tv_sec)));
+                printf("\tSize: %ldb\tPermissions: ", (&stat_file)->st_size);
+                printPerms((&stat_file)->st_mode);
+                printf("\tLast Accessed: %s", time_buf);
+            }
+            printf("\n");
         }
-        // Resets parentDup
-        strcpy(parentDup, parentDirName);
 
-        if (!strcmp(filetype(dirent->d_type), "directory") &&
+        if (filetype(dirent->d_type) == 'd' &&
             !(!strcmp(dirent->d_name, ".") || !strcmp(dirent->d_name, ".."))) {
-            strcpy(newDir, strcat(parentDup, strcat(dirent->d_name, "/")));
-            strcpy(parentDup, parentDirName);
-
-            recursiveDirs(newDir, depth + 1, verbose);
+            strcpy(newDir, strcat(dir_name_dup, strcat(dirent->d_name, "/")));
+            strcpy(dir_name_dup, dir_name);
+            if (depth < max_depth || max_depth == -1)
+                printDir(newDir, depth + 1, verbose, max_size, max_depth,
+                         f_substr, t_flag);
         }
     }
-    closedir(parentDir);
+    closedir(current_dir);
     return 1;
 }
 
 int main(int argc, char *argv[]) {
     int verbose = 0;
-    long size = 0;
-    char str_find[100];
-    str_find[0] = '\0';
+    off_t max_size = LONG_MAX;
+    char f_substr[100];
+    f_substr[0] = '\0';
+    char t_flag = 0;
+    int max_depth = -1;
 
     int opt;
     char dir_name[200];
 
     // Sets the options
     if (argc != 1) {
-        while ((opt = getopt(argc, argv, "Ss:f:")) != -1) {
+        while ((opt = getopt(argc, argv, "Ss:f:t:")) != -1) {
             switch (opt) {
                 // -S flag
                 case 'S':
@@ -141,8 +220,8 @@ int main(int argc, char *argv[]) {
                     break;
                 // -s flag
                 case 's':
-                    if (isANumber(optarg)) {
-                        size = atol(optarg);
+                    if (isNumber(optarg)) {
+                        max_size = atol(optarg);
                     } else {
                         printf("Option -s only accepts a numerical value\n");
                         exit(-1);
@@ -150,7 +229,12 @@ int main(int argc, char *argv[]) {
                     break;
                 // -f flag
                 case 'f':
-                    strcpy(str_find, optarg);
+                    strcpy(f_substr, strtok(optarg, " "));
+                    max_depth = atoi(strtok(NULL, " "));
+                    break;
+                // -t flag
+                case 't':
+                    t_flag = optarg[0];
                     break;
                 // Unknown flag or missing argument
                 case '?':
@@ -160,7 +244,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Set the directory name
-    if (argv[optind] != NULL || argv[optind] != 0x0) {
+    if (argv[optind] != NULL && argv[optind] != 0x0) {
         int dir_name_len = strlen(argv[optind]);
         strcpy(dir_name, argv[optind]);
         // Enforces that the directory ends in a '/'
@@ -171,8 +255,8 @@ int main(int argc, char *argv[]) {
     } else {
         strcpy(dir_name, "./");
     }
-
-    recursiveDirs(dir_name, MIN_DEPTH, verbose);
+    printDir(dir_name, MIN_DEPTH, verbose, max_size, max_depth, f_substr,
+             t_flag);
 
     return 0;
 }
