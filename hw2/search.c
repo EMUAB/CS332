@@ -81,18 +81,6 @@ void printPerms(mode_t perms) {
     printf("%c", (perms & S_IXOTH) ? 'x' : '-');
 }
 
-/*TODO:
-    -f  1) the file name contains the substring in the string pattern option
-        2) the depth of the
-        file relative to the starting directory of the traversal is less than
-        or equal to the depth option (the starting directory itself has a depth
-        of 0)
-    -t  "f" only shows normal files, "d" only shows directories (for 'f' only
-   list the names of normal files, still tab them over by depth but don't list
-   the directory name beforehand)
-
-*/
-
 /**
  * @brief
  *
@@ -161,7 +149,7 @@ int printDir(char *dir_name, int depth, int verbose, off_t max_size,
             (t_flag == 'd' && filetype(dirent->d_type) == 'd'))
             && (!matches || f_substr[0]=='\0')) {
             printf("%s ", dirent->d_name);
-
+            //Prints the name of the file referenced if symlink
             if (filetype(dirent->d_type) == 'l') {
                 ssize_t nbytes, bufsize;
                 strcpy(newDir, strcat(dir_name_dup, dirent->d_name));
@@ -179,9 +167,9 @@ int printDir(char *dir_name, int depth, int verbose, off_t max_size,
             if (verbose && b_stat_success == 0) {
                 strftime(time_buf, 100, "%x %I:%M%p",
                          localtime(&((&stat_file)->st_atim.tv_sec)));
-                printf("\tSize: %ldb\tPermissions: ", (&stat_file)->st_size);
+                printf("\t(%ldb\t", (&stat_file)->st_size);
                 printPerms((&stat_file)->st_mode);
-                printf("\tLast Accessed: %s", time_buf);
+                printf("\t%s)", time_buf);
             }
             printf("\n");
         }
