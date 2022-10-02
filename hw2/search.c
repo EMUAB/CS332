@@ -92,13 +92,13 @@ void printPerms(mode_t perms) {
  * @param find_substring    Specified substring
  * @param t_flag        'f' or 'd' if -t is used
  */
-int printDir(char *dir_name, int depth, int verbose, off_t max_size,
+void printDir(char *dir_name, int depth, int verbose, off_t max_size,
              int max_depth, char *f_substr, char t_flag) {
     DIR *current_dir;
-    struct dirent *dirent;
-    char time_buf[100];
     char dir_name_dup[300];
-    char newDir[300];
+    struct dirent *entry;
+    char time_buf[100];
+    char new_dir[300];
     char *buf;
 
     // Set a duplicate of the dirname so it can be messed with
@@ -112,24 +112,22 @@ int printDir(char *dir_name, int depth, int verbose, off_t max_size,
     }
 
     // Main loop that prints each file
-    while ((dirent = readdir(current_dir)) != NULL) {
+    while ((entry = readdir(current_dir)) != NULL) {
         // Skips the . and .. directory files
-        if (!strcmp(dirent->d_name, ".") || !strcmp(dirent->d_name, ".."))
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, ".."))
             continue;
 
         // Sets the stat_file
-        int b_stat_success =
-            lstat(strcat(dir_name_dup, dirent->d_name), &stat_file);
-
-        // Resets dir_name_dup
+        int success_stat =
+            lstat(strcat(dir_name_dup, entry->d_name), &stat_file);
         strcpy(dir_name_dup, dir_name);
 
         // Sets the size of directories to 0
-        if (filetype(dirent->d_type) == 'd') {
+        if (filetype(entry->d_type) == 'd') {
             (&stat_file)->st_size = 0;
         }
         int matches =
-            f_substr[0] != '\0' && strstr(dirent->d_name, f_substr) == NULL;
+            f_substr[0] != '\0' && strstr(entry->d_name, f_substr) == NULL;
 
         // Skips if the file's size is over max_size 
         // OR if the substring doesn't match
@@ -138,33 +136,32 @@ int printDir(char *dir_name, int depth, int verbose, off_t max_size,
         }
         // Tabs over the entry per search level
         int i;
-        if ((t_flag != 'd' || filetype(dirent->d_type) == 'd') && !matches) {
+        if ((t_flag != 'd' || filetype(entry->d_type) == 'd') && !matches) {
             for (i = 0; i < depth; i++) {
                 printf("\t");
             }
         }
         // Prints when there is no t flag, t flag is f and file is regular, t flag is f and file is directory
         // Does NOT print when the f flag exists and there is not a match
-        if ((t_flag == 0 || (t_flag == 'f' && filetype(dirent->d_type) == 'f') ||
-            (t_flag == 'd' && filetype(dirent->d_type) == 'd'))
+        if ((t_flag == 0 || (t_flag == filetype(entry->d_type)))
             && (!matches || f_substr[0]=='\0')) {
-            printf("%s ", dirent->d_name);
+            printf("%s ", entry->d_name);
             //Prints the name of the file referenced if symlink
-            if (filetype(dirent->d_type) == 'l') {
+            if (filetype(entry->d_type) == 'l') {
                 ssize_t nbytes, bufsize;
-                strcpy(newDir, strcat(dir_name_dup, dirent->d_name));
+                strcpy(new_dir, strcat(dir_name_dup, entry->d_name));
                 strcpy(dir_name_dup, dir_name);
                 // The following is based off of the example here:
                 // https://man7.org/linux/man-pages/man2/readlink.2.html
                 bufsize =
                     stat_file.st_size == 0 ? PATH_MAX : stat_file.st_size + 1;
                 buf = malloc(bufsize);
-                nbytes = readlink(newDir, buf, bufsize);
+                nbytes = readlink(new_dir, buf, bufsize);
                 printf("(%.*s)", (int)nbytes, buf);
                 free(buf);
             }
             // Printing for -S flag
-            if (verbose && b_stat_success == 0) {
+            if (verbose && success_stat == 0) {
                 strftime(time_buf, 100, "%x %I:%M%p",
                          localtime(&((&stat_file)->st_atim.tv_sec)));
                 printf("\t(%ldb\t", (&stat_file)->st_size);
@@ -174,17 +171,16 @@ int printDir(char *dir_name, int depth, int verbose, off_t max_size,
             printf("\n");
         }
 
-        if (filetype(dirent->d_type) == 'd' &&
-            !(!strcmp(dirent->d_name, ".") || !strcmp(dirent->d_name, ".."))) {
-            strcpy(newDir, strcat(dir_name_dup, strcat(dirent->d_name, "/")));
+        // If directory is found, printDir on that directory
+        if (filetype(entry->d_type) == 'd') {
+            strcpy(new_dir, strcat(dir_name_dup, strcat(entry->d_name, "/")));
             strcpy(dir_name_dup, dir_name);
             if (depth < max_depth || max_depth == -1)
-                printDir(newDir, depth + 1, verbose, max_size, max_depth,
+                printDir(new_dir, depth + 1, verbose, max_size, max_depth,
                          f_substr, t_flag);
         }
     }
     closedir(current_dir);
-    return 1;
 }
 
 int main(int argc, char *argv[]) {
@@ -232,7 +228,7 @@ int main(int argc, char *argv[]) {
     }
 
     // Set the directory name
-    if (argv[optind] != NULL && argv[optind] != 0x0) {
+    if (argv[optind] != NULL) {
         int dir_name_len = strlen(argv[optind]);
         strcpy(dir_name, argv[optind]);
         // Enforces that the directory ends in a '/'
@@ -245,6 +241,5 @@ int main(int argc, char *argv[]) {
     }
     printDir(dir_name, MIN_DEPTH, verbose, max_size, max_depth, f_substr,
              t_flag);
-
     return 0;
 }
