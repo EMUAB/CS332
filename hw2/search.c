@@ -11,6 +11,8 @@
 
 #define MIN_DEPTH 0
 
+typedef void PRINTFUN(struct dirent *entry, char *dir_name);
+
 struct stat stat_file;
 
 /**
@@ -81,6 +83,46 @@ void printPerms(mode_t perms) {
     printf("%c", (perms & S_IXOTH) ? 'x' : '-');
 }
 
+// Simple PRINTFUN
+void simple(struct dirent *entry, char *dir_name) {
+    char *buf;
+
+    printf("%s ", entry->d_name);
+
+    // Prints the name of the file referenced if symlink
+    if (filetype(entry->d_type) == 'l') {
+        ssize_t nbytes, bufsize;
+        strcat(dir_name, entry->d_name);
+
+        // The following is based off of the example here:
+        // https://man7.org/linux/man-pages/man2/readlink.2.html
+        bufsize = stat_file.st_size == 0 ? PATH_MAX : stat_file.st_size + 1;
+        buf = malloc(bufsize);
+        nbytes = readlink(dir_name, buf, bufsize);
+        printf("(%.*s)", (int)nbytes, buf);
+        free(buf);
+    }
+}
+
+// Verbose PRINTFUN 
+void verbose(struct dirent *entry, char *dir_name) {
+    char time_buf[100];
+
+    simple(entry, dir_name);
+
+    strftime(time_buf, 100, "%x %I:%M%p",
+             localtime(&((&stat_file)->st_atim.tv_sec)));
+    printf("\t(%ldb\t", (&stat_file)->st_size);
+    printPerms((&stat_file)->st_mode);
+    printf("\t%s)", time_buf);
+}
+
+//
+void printEntry(struct dirent *entry, char *dir_name, PRINTFUN *f) {
+    f(entry, dir_name);
+    printf("\n");
+}
+
 /**
  * @brief
  *
@@ -92,14 +134,12 @@ void printPerms(mode_t perms) {
  * @param find_substring    Specified substring
  * @param t_flag        'f' or 'd' if -t is used
  */
-void printDir(char *dir_name, int depth, int verbose, off_t max_size,
-             int max_depth, char *f_substr, char t_flag) {
+void printDir(char *dir_name, int depth, int S_flag, off_t max_size,
+              int max_depth, char *f_substr, char t_flag) {
     DIR *current_dir;
-    char dir_name_dup[300];
     struct dirent *entry;
-    char time_buf[100];
+    char dir_name_dup[300];
     char new_dir[300];
-    char *buf;
 
     // Set a duplicate of the dirname so it can be messed with
     strcpy(dir_name_dup, dir_name);
@@ -129,7 +169,7 @@ void printDir(char *dir_name, int depth, int verbose, off_t max_size,
         int matches =
             f_substr[0] != '\0' && strstr(entry->d_name, f_substr) == NULL;
 
-        // Skips if the file's size is over max_size 
+        // Skips if the file's size is over max_size
         // OR if the substring doesn't match
         if (((&stat_file)->st_size > max_size)) {
             continue;
@@ -141,34 +181,16 @@ void printDir(char *dir_name, int depth, int verbose, off_t max_size,
                 printf("\t");
             }
         }
-        // Prints when there is no t flag, t flag is f and file is regular, t flag is f and file is directory
-        // Does NOT print when the f flag exists and there is not a match
-        if ((t_flag == 0 || (t_flag == filetype(entry->d_type)))
-            && (!matches || f_substr[0]=='\0')) {
-            printf("%s ", entry->d_name);
-            //Prints the name of the file referenced if symlink
-            if (filetype(entry->d_type) == 'l') {
-                ssize_t nbytes, bufsize;
-                strcpy(new_dir, strcat(dir_name_dup, entry->d_name));
-                strcpy(dir_name_dup, dir_name);
-                // The following is based off of the example here:
-                // https://man7.org/linux/man-pages/man2/readlink.2.html
-                bufsize =
-                    stat_file.st_size == 0 ? PATH_MAX : stat_file.st_size + 1;
-                buf = malloc(bufsize);
-                nbytes = readlink(new_dir, buf, bufsize);
-                printf("(%.*s)", (int)nbytes, buf);
-                free(buf);
-            }
+        // Prints when there is no t flag, t flag is f and file is regular, t
+        // flag is f and file is directory Does NOT print when the f flag exists
+        // and there is not a match
+        if ((t_flag == 0 || (t_flag == filetype(entry->d_type))) &&
+            (!matches || f_substr[0] == '\0')) {
             // Printing for -S flag
-            if (verbose && success_stat == 0) {
-                strftime(time_buf, 100, "%x %I:%M%p",
-                         localtime(&((&stat_file)->st_atim.tv_sec)));
-                printf("\t(%ldb\t", (&stat_file)->st_size);
-                printPerms((&stat_file)->st_mode);
-                printf("\t%s)", time_buf);
-            }
-            printf("\n");
+            if (S_flag && success_stat == 0)
+                printEntry(entry, dir_name_dup, verbose);
+            else
+                printEntry(entry, dir_name_dup, simple);
         }
 
         // If directory is found, printDir on that directory
@@ -176,7 +198,7 @@ void printDir(char *dir_name, int depth, int verbose, off_t max_size,
             strcpy(new_dir, strcat(dir_name_dup, strcat(entry->d_name, "/")));
             strcpy(dir_name_dup, dir_name);
             if (depth < max_depth || max_depth == -1)
-                printDir(new_dir, depth + 1, verbose, max_size, max_depth,
+                printDir(new_dir, depth + 1, S_flag, max_size, max_depth,
                          f_substr, t_flag);
         }
     }
@@ -196,7 +218,7 @@ int main(int argc, char *argv[]) {
 
     // Sets the options
     if (argc != 1) {
-        while ((opt = getopt(argc, argv, "Ss:f:t:")) != -1) {
+        while ((opt = getopt(argc, argv, ":Ss:f:t:")) != -1) {
             switch (opt) {
                 // -S flag
                 case 'S':
@@ -220,8 +242,26 @@ int main(int argc, char *argv[]) {
                 case 't':
                     t_flag = optarg[0];
                     break;
-                // Unknown flag or missing argument
+                // Missing argument
+                case ':':
+                    printf("Option -%c should have argument ", optopt);
+                    switch (optopt) {
+                        case 's':
+                            printf("<size in bytes>");
+                            break;
+                        case 'f':
+                            printf("\"<string pattern> <depth>\"");
+                            break;
+                        case 't':
+                            printf("<option>");
+                        default:
+                            exit(-1);
+                    }
+                    printf("\n");
+                    exit(-1);
+                // Unknown flag
                 case '?':
+                    printf("Unknown option: %c\n", optopt);
                     exit(-1);
             }
         }
