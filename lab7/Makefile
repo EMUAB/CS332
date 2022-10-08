@@ -4,16 +4,16 @@ CC = gcc
 CFLAGS = -Wall -g
 
 DEPS	= Makefile
-OBJS	= lab5.o
+OBJS	= lab7.o
 
-EXECS	= lab5
+EXECS	= lab7
 
 all:	$(EXECS)
 
 %.o:	%.c $(DEPS)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-lab5:	$(OBJS)
+lab7:	$(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
 clean:	
