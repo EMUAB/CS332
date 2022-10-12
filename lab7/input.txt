@@ -1,3 +1,5 @@
-uname -a
 uname
-../lab5/lab5 ../
+ifconfig
+../lab5/lab5 ./
+../lab5/lab5 ./
+uname -a

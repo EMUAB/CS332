@@ -11,81 +11,70 @@
 
 int main(int argc, char **argv)
 {
-    FILE *file = fopen("input.txt", "r");
-
-    if (file == NULL) {
+    // Open the given file & make output.log
+    FILE *file_in = fopen(argv[1], "r");
+    if (file_in == NULL) {
         printf("Error opening input file");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
+    FILE *file_out = fopen("output.log", "w");
 
     char *line;
-    char line_dup[BUF_SIZE];
-    char *total_args[BUF_SIZE];
-    char token[BUF_SIZE];
-    char command[BUF_SIZE];
-    char buf[BUF_SIZE];
-
+    char *total_args[20];
+    char *token;
+    char *time_str;
     size_t maxlen = 0;
     ssize_t n;
     int count, pid;
     int status;
+    time_t current_time;
 
-    while ((n = getline(&line, &maxlen, file)) > 0) {
+    // Repeats for every command in given file
+    while ((n = getline(&line, &maxlen, file_in)) > 0) {
+        // Chop newline off of line to clean up output.log
+        line[strcspn(line, "\n")] = 0;
+        fputs(line, file_out);
+        fputs("\t", file_out);
+
+        // Make total args have an entry for each part of command
         count = 0;
-        strcpy(line_dup, line);
-        strcpy(token, strtok(line, " "));
-        strcpy(command, token);
+        token = strtok(line, " ");
         while (token != NULL) {
-            if (strstr(token, "\n") != NULL)
-                strcpy(token, strstr(token, "\n"));
-            strcpy(total_args[count++], token);
-            strcpy(token, strtok(NULL, " "));
+            while (strstr(token, "\n") != NULL)
+                token[strcspn(token, "\n")] = 0;
+            total_args[count++] = token;
+            token = strtok(NULL, " ");
         }
-        total_args[count] = NULL;
+        total_args[count] = 0;
 
-        buf[strcspn(buf, "\n")] = 0;
+        // Prints the time
+        time(&current_time);
+        time_str = ctime(&current_time);
+        time_str[strcspn(time_str, "\n")] = 0;
+        fputs(time_str, file_out);
+        fputs("\t", file_out);
+
         pid = fork();
-        if (pid == 0) {
-            printf("%s %s\n", command, total_args[0]);
-            execvp(command, total_args);
+        if (pid == 0) { // Child process exec
+            execvp(total_args[0], total_args);
             perror("Exec failed");
             break;
         }
-        else if (pid > 0) {
+        else if (pid > 0) { // Parent process
             wait(&status);
+            time(&current_time);
+            fputs(ctime(&current_time), file_out);
         }
-        else {
-            printf("Error creating fork\n");
-            perror("fork");
+        else { // ICE
+            perror("Fork failed");
             exit(EXIT_FAILURE);
         }
     }
+    // Final cleanup
     free(line);
-    // free(token);
+    free(token);
+    fclose(file_in);
+    fclose(file_out);
 
-    // pid = fork();
-    // if (pid == 0) { /* this is child process */
-    //     printf("This is the child process, my PID is %ld and my parent PID is %ld\n", (long)getpid(), (long)getppid());
-    // }
-    // else if (pid > 0) { /* this is the parent process */
-    //     printf("This is the parent process, my PID is %ld and the child PID is %ld\n", (long)getpid(), (long)pid);
-
-    //     printf("Wait for the child process to terminate\n");
-    //     wait(&status);
-
-    //     if (WIFEXITED(status)) { /* child process terminated normally */
-    //         printf("Child process exited with status = %d\n",
-    //                WEXITSTATUS(status));
-    //     }
-    //     else { /* child process did not terminate normally */
-    //         printf("ERROR: Child process did not terminate normally!\n");
-    //     }
-    // }
-    // else { /* we have an error in process creation */
-    //     perror("fork");
-    //     exit(EXIT_FAILURE);
-    // }
-
-    // printf("[%ld]: Exiting program .....\n", (long)getpid());
     return 0;
 }

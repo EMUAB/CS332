@@ -1,7 +1,14 @@
-# CS332 Lab7
+CS332 Lab7
+==================================
 
-Prints a tree of the given directory's files and subdirectories' files
+Given an input file that contains line-separated commands, an output.log file is created that contains each command and when it started, followed by when it finished executing.
 
-**Compile** with "make"
+Compile
+------------------
 
-**Usage**: "./lab7 \<filename>"
+"make"
+
+Usage
+------------------
+
+"./lab7 \<filename>"
