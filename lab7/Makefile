@@ -16,5 +16,8 @@ all:	$(EXECS)
 lab7:	$(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
+debug: $(all)
+	gdb -tui lab7
+
 clean:	
 	/bin/rm -i *.o $(EXECS)
