@@ -12,5 +12,8 @@ all:	$(EXECS)
 search:	$(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^
 
+debug: $(all)
+	gdb -tui search
+
 clean:
 	/bin/rm -i *.o $(EXECS)

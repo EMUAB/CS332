@@ -1,15 +1,18 @@
 #include <ctype.h>
 #include <dirent.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
 #define MIN_DEPTH 0
+#define BUF_SIZE 512
 
 typedef void PRINTFUN(struct dirent *entry, char *dir_name);
 char *e_command;
@@ -74,6 +77,11 @@ int isNumber(char *input)
     return 1;
 }
 
+/**
+ * @brief Given a file's perms, it prints them out directly
+ * 
+ * @param perms 
+ */
 void printPerms(mode_t perms)
 {
     printf("%c", (perms & S_IRUSR) ? 'r' : '-');
@@ -87,7 +95,12 @@ void printPerms(mode_t perms)
     printf("%c", (perms & S_IXOTH) ? 'x' : '-');
 }
 
-// Simple PRINTFUN
+/**
+ * @brief Simple PRINTFUN
+ * 
+ * @param entry 
+ * @param dir_name 
+ */
 void simple(struct dirent *entry, char *dir_name)
 {
     char *buf;
@@ -109,14 +122,19 @@ void simple(struct dirent *entry, char *dir_name)
     }
 }
 
-// Verbose PRINTFUN
+/**
+ * @brief Verbose PRINTFUN
+ * 
+ * @param entry 
+ * @param dir_name 
+ */
 void verbose(struct dirent *entry, char *dir_name)
 {
-    char time_buf[100];
+    char time_buf[BUF_SIZE];
 
     simple(entry, dir_name);
 
-    strftime(time_buf, 100, "%x %I:%M%p",
+    strftime(time_buf, BUF_SIZE, "%x %I:%M%p",
              localtime(&((&stat_file)->st_atim.tv_sec)));
     printf("\t(%ldb\t", (&stat_file)->st_size);
     printPerms((&stat_file)->st_mode);
@@ -129,34 +147,73 @@ void printEntry(struct dirent *entry, char *dir_name, PRINTFUN *fun)
     printf("\n");
 }
 
+/**
+ * @brief Runs exec once on the given file (Largely taken from lab7)
+ * 
+ * @param entry 
+ * @param dir_name 
+ * @param e_flag 
+ */
+void fork_each(struct dirent *entry, char *dir_name)
+{
+    char line[BUF_SIZE];
+    char *total_args[20];
+    char *token;
+    int count, pid, status;
 
-void fork_each(struct dirent *entry, char *dir_name, char e_flag) {
+    sprintf(line, "%s %s%s", e_command, dir_name, entry->d_name);
 
-}
+    // Make total args have an entry for each part of command
+    count = 0;
+    token = strtok(line, " ");
+    while (token != NULL) {
+        while (strstr(token, "\n") != NULL)
+            token[strcspn(token, "\n")] = 0;
+        total_args[count++] = token;
+        token = strtok(NULL, " ");
+    }
+    total_args[count] = 0;
 
-void fork_once(char ** files) {
-
+    pid = fork();
+    if (pid == 0) {  // Child process exec
+        execvp(total_args[0], total_args);
+        perror("Exec failed");
+        exit(EXIT_FAILURE);
+    }
+    else if (pid > 0) {  // Parent process
+        wait(&status);
+    }
+    else {  // If fork() fails
+        perror("Fork failed");
+        exit(EXIT_FAILURE);
+    }
+    // Final cleanup
+    free(token);
 }
 
 /**
- * @brief
- *
- * @param dir_name      Directory string name
- * @param depth         Current search depth
- * @param verbose       Is/not verbose
- * @param max_size      Specified max size
- * @param max_depth     Specified max depth
- * @param find_substring    Specified substring
- * @param t_flag        'f' or 'd' if -t is used
+ * @brief Runs exec once with all of the given files
+ * 
+ * @param files 
+ * @param size 
  */
+void fork_once(char **files, char *dir_name, int size)
+{
+    int i;
+    for (i = 0; i < size; i++) {
+        printf("%s\n", files[i]);
+    }
+    return;
+}
+
 void printDir(char *dir_name, int depth, int S_flag, off_t max_size,
               int max_depth, char *f_substr, char t_flag, char e_flag)
 {
     DIR *current_dir;
     struct dirent *entry;
-    char dir_name_dup[300];
-    char new_dir[300];
-    char **e_flag_files = {0};
+    char dir_name_dup[BUF_SIZE];
+    char new_dir[BUF_SIZE];
+    char *e_flag_files[BUF_SIZE] = {0};
 
     // Set a duplicate of the dirname so it can be messed with
     strcpy(dir_name_dup, dir_name);
@@ -208,17 +265,16 @@ void printDir(char *dir_name, int depth, int S_flag, off_t max_size,
             if (S_flag && success_stat == 0 && e_flag == 0) {
                 printEntry(entry, dir_name_dup, verbose);
             }
+            else if (e_flag == 'e') {
+                fork_each(entry, dir_name_dup);
+            }
+            else if (e_flag == 'E') {
+                e_flag_files[count++] = strdup(entry->d_name);
+            }
             else {
-                if (e_flag == 'e') {
-                    fork_each(entry, dir_name_dup, e_flag);
-                }
-                else if (e_flag=='E') {
-                    e_flag_files[count++] = entry->d_name;
-                }
                 printEntry(entry, dir_name_dup, simple);
             }
         }
-        if (e_flag == 'E') fork_once(e_flag_files);
 
         // If directory is found, printDir on that directory
         if (filetype(entry->d_type) == 'd') {
@@ -229,6 +285,7 @@ void printDir(char *dir_name, int depth, int S_flag, off_t max_size,
                          f_substr, t_flag, e_flag);
         }
     }
+    if (e_flag == 'E') fork_once(e_flag_files, dir_name_dup, 200);
     closedir(current_dir);
 }
 
@@ -236,7 +293,7 @@ int main(int argc, char *argv[])
 {
     int verbose = 0;
     off_t max_size = LONG_MAX;
-    char f_substr[100];
+    char f_substr[BUF_SIZE];
     f_substr[0] = '\0';
     char t_flag = 0;
     char e_flag = 0;
@@ -274,9 +331,11 @@ int main(int argc, char *argv[])
                     break;
                 case 'e':
                     e_flag = 'e';
+                    e_command = optarg;
                     break;
                 case 'E':
                     e_flag = 'E';
+                    e_command = optarg;
                     break;
                 // Missing argument
                 case ':':
