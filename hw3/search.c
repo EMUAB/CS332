@@ -79,8 +79,8 @@ int isNumber(char *input)
 
 /**
  * @brief Given a file's perms, it prints them out directly
- * 
- * @param perms 
+ *
+ * @param perms
  */
 void printPerms(mode_t perms)
 {
@@ -97,9 +97,9 @@ void printPerms(mode_t perms)
 
 /**
  * @brief Simple PRINTFUN
- * 
- * @param entry 
- * @param dir_name 
+ *
+ * @param entry
+ * @param dir_name
  */
 void simple(struct dirent *entry, char *dir_name)
 {
@@ -124,9 +124,9 @@ void simple(struct dirent *entry, char *dir_name)
 
 /**
  * @brief Verbose PRINTFUN
- * 
- * @param entry 
- * @param dir_name 
+ *
+ * @param entry
+ * @param dir_name
  */
 void verbose(struct dirent *entry, char *dir_name)
 {
@@ -149,15 +149,15 @@ void printEntry(struct dirent *entry, char *dir_name, PRINTFUN *fun)
 
 /**
  * @brief Runs exec once on the given file (Largely taken from lab7)
- * 
- * @param entry 
- * @param dir_name 
- * @param e_flag 
+ *
+ * @param entry
+ * @param dir_name
+ * @param e_flag
  */
 void fork_each(struct dirent *entry, char *dir_name)
 {
     char line[BUF_SIZE];
-    char *total_args[20];
+    char *total_args[BUF_SIZE];
     char *token;
     int count, pid, status;
 
@@ -193,27 +193,55 @@ void fork_each(struct dirent *entry, char *dir_name)
 
 /**
  * @brief Runs exec once with all of the given files
- * 
- * @param files 
- * @param size 
+ *
+ * @param files
+ * @param size
  */
-void fork_once(char **files, char *dir_name, int size)
+void fork_once(char *files)
 {
-    int i;
-    for (i = 0; i < size; i++) {
-        printf("%s\n", files[i]);
+    char line[BUF_SIZE];
+    char *total_args[50];
+    char *token;
+    int count, pid, status;
+
+    sprintf(line, "%s %s", e_command, files);
+
+    // Make total args have an entry for each part of command
+    count = 0;
+    token = strtok(line, " ");
+    while (token != NULL) {
+        while (strstr(token, "\n") != NULL)
+            token[strcspn(token, "\n")] = 0;
+        total_args[count++] = token;
+        token = strtok(NULL, " ");
     }
-    return;
+    total_args[count] = 0;
+
+    pid = fork();
+    if (pid == 0) {  // Child process exec
+        execvp(total_args[0], total_args);
+        perror("Exec failed");
+        exit(EXIT_FAILURE);
+    }
+    else if (pid > 0) {  // Parent process
+        wait(&status);
+    }
+    else {  // If fork() fails
+        perror("Fork failed");
+        exit(EXIT_FAILURE);
+    }
+    // Final cleanup
+    free(token);
 }
 
-void printDir(char *dir_name, int depth, int S_flag, off_t max_size,
-              int max_depth, char *f_substr, char t_flag, char e_flag)
+void searchDir(char *dir_name, int depth, int S_flag, off_t max_size,
+               int max_depth, char *f_substr, char t_flag, char e_flag)
 {
     DIR *current_dir;
     struct dirent *entry;
     char dir_name_dup[BUF_SIZE];
     char new_dir[BUF_SIZE];
-    char *e_flag_files[BUF_SIZE] = {0};
+    char e_flag_files[BUF_SIZE * BUF_SIZE] = {0};
 
     // Set a duplicate of the dirname so it can be messed with
     strcpy(dir_name_dup, dir_name);
@@ -225,7 +253,6 @@ void printDir(char *dir_name, int depth, int S_flag, off_t max_size,
         exit(-1);
     }
 
-    int count = 0;
     // Main loop that prints each file
     while ((entry = readdir(current_dir)) != NULL) {
         // Skips the . and .. directory files
@@ -241,8 +268,7 @@ void printDir(char *dir_name, int depth, int S_flag, off_t max_size,
         if (filetype(entry->d_type) == 'd') {
             (&stat_file)->st_size = 0;
         }
-        int matches =
-            f_substr[0] != '\0' && strstr(entry->d_name, f_substr) == NULL;
+        int matches = f_substr[0] != '\0' && strstr(entry->d_name, f_substr) == NULL;
 
         // Skips if the file's size is over max_size
         // OR if the substring doesn't match
@@ -259,33 +285,35 @@ void printDir(char *dir_name, int depth, int S_flag, off_t max_size,
         // Prints when there is no t flag, t flag is f and file is regular, t
         // flag is f and file is directory Does NOT print when the f flag exists
         // and there is not a match
-        if ((t_flag == 0 || (t_flag == filetype(entry->d_type))) &&
+        if ((t_flag == 0 || t_flag == filetype(entry->d_type)) &&
             (!matches || f_substr[0] == '\0')) {
-            // Printing for -S flag
-            if (S_flag && success_stat == 0 && e_flag == 0) {
-                printEntry(entry, dir_name_dup, verbose);
-            }
-            else if (e_flag == 'e') {
+            if (e_flag == 'e') {
                 fork_each(entry, dir_name_dup);
             }
             else if (e_flag == 'E') {
-                e_flag_files[count++] = strdup(entry->d_name);
+                int files_len = strlen(e_flag_files);
+                char files_dup[files_len + 1];
+                strcpy(files_dup, e_flag_files);
+                sprintf(e_flag_files, "%s %s%s", files_dup, dir_name_dup, strdup(entry->d_name));
+            }
+            else if (S_flag && success_stat == 0) {
+                printEntry(entry, dir_name_dup, verbose);
             }
             else {
                 printEntry(entry, dir_name_dup, simple);
             }
         }
 
-        // If directory is found, printDir on that directory
+        // If directory is found, searchDir on that directory
         if (filetype(entry->d_type) == 'd') {
             strcpy(new_dir, strcat(dir_name_dup, strcat(entry->d_name, "/")));
             strcpy(dir_name_dup, dir_name);
             if (depth < max_depth || max_depth == -1)
-                printDir(new_dir, depth + 1, S_flag, max_size, max_depth,
-                         f_substr, t_flag, e_flag);
+                searchDir(new_dir, depth + 1, S_flag, max_size, max_depth,
+                          f_substr, t_flag, e_flag);
         }
     }
-    if (e_flag == 'E') fork_once(e_flag_files, dir_name_dup, 200);
+    if (e_flag == 'E') fork_once(e_flag_files);
     closedir(current_dir);
 }
 
@@ -379,7 +407,7 @@ int main(int argc, char *argv[])
     else {
         strcpy(dir_name, "./");
     }
-    printDir(dir_name, MIN_DEPTH, verbose, max_size, max_depth, f_substr,
-             t_flag, e_flag);
+    searchDir(dir_name, MIN_DEPTH, verbose, max_size, max_depth, f_substr,
+              t_flag, e_flag);
     return 0;
 }
