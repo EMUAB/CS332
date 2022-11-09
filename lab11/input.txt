@@ -1,0 +1,5 @@
+uname
+ls -l
+../lab5/lab5 ./
+../lab5/lab5 ./
+uname -a
