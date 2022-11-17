@@ -1,20 +1,16 @@
 # Based off of the previously supplied makefile
 
 CC = gcc
-CFLAGS = -Wall -g -O -lpthread
+CFLAGS = -Wall -O -lpthread
 
 DEPS	= Makefile
-OBJS	= lab12.o
 
 EXECS	= lab12
 
 all:	$(EXECS)
 
-%.o:	%.c $(DEPS)
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-lab12:	$(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+lab12:
+	$(CC) lab12.c $(CFLAGS) -o $@ $^
 
 debug: $(all)
 	gdb -tui lab11
