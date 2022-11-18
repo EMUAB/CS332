@@ -17,7 +17,7 @@ struct sumInfo {
 /**
  * @brief Computes partial sum of N according to its tid
  *
- * @param arg
+ * @param arg sumInfo 
  * @return struct sumInfo
  */
 void *compute(void *arg)
