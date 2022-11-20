@@ -1,13 +1,14 @@
-#include <pthread.h>
+#include <errno.h>
 #include <fcntl.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <sys/stat.h>
-#include <errno.h>
+
 #include "queue.h"
 
 #define CMD_BUF_SIZE 0x800
@@ -32,9 +33,8 @@ void runCmd()
 void *threadProc(void *arg)
 {
     int bisQ = 1;
-    int thread_num = (int)arg;
-    do
-    {
+    int thread_num = (int)(long)arg;
+    do {
         // Lock mutex and update global vars
         pthread_mutex_lock(&mutex);
         cmd_info *command;
@@ -52,8 +52,7 @@ void *threadProc(void *arg)
 
         jobidout = malloc(sizeof(char) * 20);
         jobiderr = malloc(sizeof(char) * 20);
-        if (mkdir("jobs_out", 0775) && errno != EEXIST)
-        {
+        if (mkdir("jobs_out", 0775) && errno != EEXIST) {
             printf("Error creating output directory\n");
             exit(-1);
         }
@@ -62,8 +61,7 @@ void *threadProc(void *arg)
 
         count = 0;
         token = strtok(line, " ");
-        while (token != NULL)
-        {
+        while (token != NULL) {
             while (strstr(token, "\n") != NULL)
                 token[strcspn(token, "\n")] = 0;
             total_args[count++] = token;
@@ -72,19 +70,16 @@ void *threadProc(void *arg)
         total_args[count] = 0;
 
         pid = fork();
-        if (pid == 0)
-        { // Child process exec
+        if (pid == 0) {  // Child process exec
             sprintf(jobidout, "jobs_out/%d.out", command->jobid);
             if ((fdout = open(jobidout,
-                              O_CREAT | O_APPEND | O_WRONLY, 0755)) == -1)
-            {
+                              O_CREAT | O_APPEND | O_WRONLY, 0755)) == -1) {
                 printf("\nError opening <jobid>.out\n");
                 return (NULL);
             }
             sprintf(jobiderr, "jobs_out/%d.err", command->jobid);
             if ((fderr = open(jobiderr,
-                              O_CREAT | O_APPEND | O_WRONLY, 0755)) == -1)
-            {
+                              O_CREAT | O_APPEND | O_WRONLY, 0755)) == -1) {
                 printf("\nError opening <jobid>.err\n");
                 return (NULL);
             }
@@ -94,12 +89,10 @@ void *threadProc(void *arg)
             perror("Exec failed");
             return (NULL);
         }
-        else if (pid > 0)
-        { // Parent process
+        else if (pid > 0) {  // Parent process
             wait(&status);
         }
-        else
-        { // ICE
+        else {  // ICE
             perror("Fork failed");
             exit(EXIT_FAILURE);
         }
@@ -118,8 +111,7 @@ void *threadProc(void *arg)
 void initRunningCmdArr()
 {
     int i;
-    for (i = 0; i < alloc_threads; i++)
-    {
+    for (i = 0; i < alloc_threads; i++) {
         resetThread(i);
     }
 }
@@ -130,14 +122,21 @@ void resetThread(int thread)
     running_cmds[thread].jobid = -1;
 }
 
+int runningProcCount() {
+    int i, count = 0;
+    for (i = 0; i < alloc_threads; i++) {
+        if (running_cmds[i].jobid != -1) 
+            count++;
+    }
+    return count;
+}
+
 void checkThread(pthread_t *tid)
 {
     int i;
-    for (i = 0; i < alloc_threads; i++)
-    {
-        if (running_cmds[i].jobid == -1)
-        {
-            pthread_create(&tid[i], NULL, threadProc, (void *)i);
+    for (i = 0; i < alloc_threads; i++) {
+        if (running_cmds[i].jobid == -1) {
+            pthread_create(&tid[i], NULL, threadProc, (void *)(long)i);
             break;
         }
     }
@@ -145,13 +144,11 @@ void checkThread(pthread_t *tid)
 
 int main(int argc, char const *argv[])
 {
-    if (argc < 2)
-    {
+    if (argc < 2) {
         printf("Command must be in the format: ./myscheduler <# of cores>\n");
         exit(-1);
     }
-    else if (atoi(argv[1]) < 1)
-    {
+    else if (atoi(argv[1]) < 1) {
         printf("At least 1 core must be allocated\n");
         exit(-1);
     }
@@ -168,8 +165,7 @@ int main(int argc, char const *argv[])
     running_cmds = (cmd_info *)malloc(sizeof(cmd_info) * thread_count);
     initRunningCmdArr(thread_count);
 
-    while (1)
-    {
+    while (1) {
         // Prompt for command to be entered
         printf("Enter command> ");
         fgets(cmd, CMD_BUF_SIZE, stdin);
@@ -177,13 +173,11 @@ int main(int argc, char const *argv[])
 
         strcpy(cmd_dup, cmd);
         strtok(cmd_dup, " ");
-        if (!strcmp(cmd_dup, "submit"))
-        {
+        if (!strcmp(cmd_dup, "submit")) {
             // Check that submit also contains command
             if (strlen(cmd) > strlen(cmd_dup) + 2)
                 memmove(cmd, cmd + strlen(cmd_dup) + 1, strlen(cmd));
-            else
-            {
+            else {
                 printf("Please include a command with \"submit\"\n");
                 continue;
             }
@@ -195,33 +189,26 @@ int main(int argc, char const *argv[])
             printf("Job %d added to the queue\n", new_cmd->jobid);
             checkThread(tid);
         }
-        else if (!strcmp(cmd_dup, "showjobs"))
-        {
+        else if (!strcmp(cmd_dup, "showjobs")) {
             int j, count = q->count;
             printf("jobid\tcommand\t\tstatus\n");
-            for (j = 0; j < alloc_threads; j++)
-            {
-                if (running_cmds[j].jobid >= 0)
-                {
+            for (j = 0; j < alloc_threads; j++) {
+                if (running_cmds[j].jobid >= 0) {
                     printf("%d\t%s\tRunning\n", running_cmds[j].jobid, running_cmds[j].cmd);
                 }
             }
-            for (j = 0; j < count; j++)
-            {
+            for (j = 0; j < count; j++) {
                 printf("%d\t%s\tQueued\n", q->buffer[(q->start + j) % q->size].jobid, q->buffer[(q->start + j) % q->size].cmd);
             }
         }
-        else if (!strcmp(cmd_dup, "exit"))
-        {
-            if (q->count > 0)
-            {
-                printf("%d process(es) are queued; still exit? (y/n): ", q->count);
+        else if (!strcmp(cmd_dup, "exit")) {
+            if (q->count > 0) {
+                printf("%d process(es) are running/queued; still exit? (y/n): ", (q->count)+runningProcCount());
                 fgets(cmd, CMD_BUF_SIZE, stdin);
                 cmd[strcspn(cmd, "\n")] = 0;
                 strcpy(cmd_dup, cmd);
 
-                if (strcasecmp(cmd_dup, "y"))
-                {
+                if (strcasecmp(cmd_dup, "y")) {
                     continue;
                 }
             }
@@ -229,16 +216,9 @@ int main(int argc, char const *argv[])
             queue_destroy(q);
             exit(0);
         }
-        else if (!strcmp(cmd_dup, "remove"))
-        {
-            queue_delete(q);
-            printf("Removed one from queue\n");
+        else if (!strcmp(cmd_dup, "")) {
         }
-        else if (!strcmp(cmd_dup, ""))
-        {
-        }
-        else
-        {
+        else {
             printf("\"%s\" not OK\t", cmd_dup);
             printf("Available commands: \"submit\", \"showjobs\"\n");
         }
