@@ -13,7 +13,7 @@ queue *queue_init(int n)
 {
 	queue *q = (queue *)malloc(sizeof(queue));
 	q->size = n;
-	q->buffer = malloc(sizeof(int) * n);
+	q->buffer = malloc(sizeof(cmd_info) * n);
 	q->start = 0;
 	q->end = 0;
 	q->count = 0;
@@ -29,12 +29,12 @@ queue *queue_init(int n)
  * @param item
  * @return int
  */
-int queue_insert(queue *q, int item)
+int queue_insert(queue *q, cmd_info *item)
 {
 	if ((q == NULL) || (q->count == q->size))
 		return -1;
 
-	q->buffer[q->end % q->size] = item;
+	q->buffer[q->end % q->size] = *item;
 	q->end = (q->end + 1) % q->size;
 	q->count++;
 
@@ -48,12 +48,13 @@ int queue_insert(queue *q, int item)
  * @param queue
  * @return int
  */
-int queue_delete(queue *q)
+cmd_info *queue_delete(queue *q)
 {
 	if ((q == NULL) || (q->count == 0))
-		return -1;
+		return (cmd_info *)NULL;
 
-	int x = q->buffer[q->start];
+	cmd_info *x = (cmd_info *)malloc(sizeof(cmd_info));
+	*x = q->buffer[q->start];
 	q->start = (q->start + 1) % q->size;
 	q->count--;
 
@@ -74,7 +75,7 @@ void queue_display(queue *q)
 			   q->count, q->start, q->end);
 		printf("queue contents: ");
 		for (i = 0; i < q->count; i++)
-			printf("%d ", q->buffer[(q->start + i) % q->size]);
+			printf("\"%d\" ", q->buffer[(q->start + i) % q->size].jobid);
 		printf("\n");
 	}
 	else
