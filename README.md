@@ -1,2 +1,2 @@
 # CS332
-Archive Repository for CS 332 (Fall 2022)
+__[ARCHIVED]__ Repository for CS332 (Fall 2022)
